@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" id="viewportMeta" content="width=device-width, initial-scale=1.0">
     <title>مسجل الصوت والتايمر الاحترافي</title>
     
     <!-- إعدادات الـ PWA الخاصة بالمسجل -->
@@ -73,14 +73,14 @@
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
-            padding: 40px 20px;
+            padding: 80px 20px 40px; /* مسافة فوق عشان الزراير العايمة */
             transition: background-color 0.4s ease, color 0.4s ease;
             display: flex;
             flex-direction: column;
             align-items: center;
         }
 
-        /* زرار تبديل المظهر */
+        /* زرار تبديل المظهر (موجود فوق على الشمال) */
         .theme-toggle {
             position: fixed;
             top: 15px;
@@ -103,6 +103,54 @@
             z-index: 1000;
         }
         .theme-toggle:hover { transform: scale(1.1); }
+
+        /* زرار تبديل عرض الديسكتوب والموبايل (جنب زرار المظهر) */
+        .view-toggle-btn {
+            position: fixed;
+            top: 15px;
+            left: 70px;
+            background: var(--toggle-btn-bg);
+            color: var(--text-color);
+            border: 1px solid var(--timer-border);
+            border-radius: 5px;
+            height: 45px;
+            padding: 0 15px;
+            font-size: 14px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 5px var(--shadow);
+            transition: background-color 0.4s, color 0.4s, transform 0.2s;
+            z-index: 1000;
+        }
+        .view-toggle-btn:hover { transform: scale(1.05); }
+
+        /* زرار التحديث القوي (موجود فوق على اليمين) */
+        .strong-refresh-btn {
+            position: fixed;
+            top: 15px;
+            right: 15px;
+            background: #dc3545; 
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 15px;
+            font-size: 14px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 5px var(--shadow);
+            transition: transform 0.2s, opacity 0.3s;
+            z-index: 1000;
+        }
+        .strong-refresh-btn:hover {
+            transform: scale(1.05);
+            opacity: 0.9;
+        }
 
         /* الأزرار العامة */
         button {
@@ -250,13 +298,13 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <link rel="manifest" href="./manifest.json?v=v1790165357718">
-    <meta name="theme-color" content="#827db5">
-    <link rel="apple-touch-icon" href="./icon-192.png?v=v1790165357718">
+    <link rel="manifest" href="./manifest.json?v=v1790166955634">
+    <meta name="theme-color" content="#ab5ed5">
+    <link rel="apple-touch-icon" href="./icon-192.png?v=v1790166955634">
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('./sw.js?v=v1790165357718')
+          navigator.serviceWorker.register('./sw.js?v=v1790166955634')
             .then(reg => console.log('SW Registered'))
             .catch(err => console.log('SW Failed', err));
         });
@@ -265,8 +313,14 @@
 </head>
 <body>
 
-    <!-- زر التبديل بين المودين -->
+    <!-- زر التبديل بين المودين (لايت ودارك) -->
     <button class="theme-toggle" id="themeToggle" title="تبديل المظهر">☀️</button>
+
+    <!-- زر التبديل بين الديسكتوب والموبايل -->
+    <button class="view-toggle-btn" id="viewToggleBtn" title="تبديل العرض">💻 ديسكتوب</button>
+
+    <!-- زر التحديث القوي -->
+    <button class="strong-refresh-btn" id="strongRefreshBtn" title="تحديث قوي (مسح البيانات)">🔄 تحديث قوي</button>
 
     <!-- ================= القسم العلوي: مسجل الصوت ================= -->
     <div class="recorder-container">
@@ -320,7 +374,49 @@
         const db = firebase.database();
 
         /* -----------------------------------------------------------
-           أولاً: كود الدارك/اللايت مود و PWA
+           1: كود زر التحديث القوي
+        ----------------------------------------------------------- */
+        document.getElementById('strongRefreshBtn').addEventListener('click', () => {
+            if(confirm("تحذير: التحديث القوي هيمسح كل بيانات التايمرات من المتصفح (Local Storage) والكوكيز وهيعمل ريفريش. متأكد إنك عايز تكمل؟")) {
+                try {
+                    sessionStorage.clear();
+                    localStorage.clear();
+                    document.cookie.split(";").forEach(function(c){
+                        document.cookie = c.replace(/^ +/,"").replace(/=.*/,"=;expires="+new Date().toUTCString()+";path=/")
+                    });
+                    document.querySelectorAll("input, textarea").forEach(i=>{
+                        i.value = "";
+                        i.defaultValue = ""
+                    });
+                    window.location.reload(true);
+                } catch(e) {
+                    console.error("خطأ في التحديث:", e);
+                }
+            }
+        });
+
+        /* -----------------------------------------------------------
+           2: كود زر تبديل العرض (Desktop / Mobile)
+        ----------------------------------------------------------- */
+        const viewToggleBtn = document.getElementById('viewToggleBtn');
+        const viewportMeta = document.getElementById('viewportMeta');
+        let isDesktopView = false;
+
+        viewToggleBtn.addEventListener('click', () => {
+            isDesktopView = !isDesktopView;
+            if (isDesktopView) {
+                // تفعيل عرض الديسكتوب
+                viewportMeta.setAttribute('content', 'width=1024');
+                viewToggleBtn.innerHTML = '📱 موبايل';
+            } else {
+                // تفعيل عرض الموبايل الطبيعي
+                viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0');
+                viewToggleBtn.innerHTML = '💻 ديسكتوب';
+            }
+        });
+
+        /* -----------------------------------------------------------
+           3: كود الدارك/اللايت مود و PWA
         ----------------------------------------------------------- */
         const themeToggleBtn = document.getElementById('themeToggle');
         
@@ -344,7 +440,7 @@
         }
 
         /* -----------------------------------------------------------
-           ثانياً: كود مسجل الصوت
+           4: كود مسجل الصوت
         ----------------------------------------------------------- */
         let mediaRecorder;
         let audioChunks = [];
@@ -424,7 +520,7 @@
         });
 
         /* -----------------------------------------------------------
-           ثالثاً: كود التايمر الاحترافي (مربوط بالسيرفر)
+           5: كود التايمر الاحترافي (مربوط بالسيرفر)
         ----------------------------------------------------------- */
         let timers = JSON.parse(localStorage.getItem('offline_timers_data')) || [];
         let activeIntervals = {};
@@ -531,6 +627,7 @@
             }
         }
 
+        // الوظيفة الأساسية اللي كانت عاملة المشكلة
         function createNewTimer() {
             const nameInput = document.getElementById('newTimerName');
             const name = nameInput.value.trim() || `تايمر ${timers.length + 1}`;
