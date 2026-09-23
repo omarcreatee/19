@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مسجل الصوت والتايمر الاحترافي</title>
+    
+    <!-- إعدادات الـ PWA الخاصة بالمسجل -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0b0f19">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
+    <!-- استدعاء مكتبات فايربيز (Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        /* ================= المتغيرات الأساسية (الدارك مود كوضع افتراضي) ================= */
+        :root {
+            --bg-color: #0b0f19;
+            --container-bg: #151b29;
+            --text-color: #e2e8f0;
+            --heading-color: #ffffff; 
+            
+            --btn-start-bg: #28a745;
+            --btn-stop-bg: #dc3545;
+            --btn-text: #ffffff;
+            
+            --status-ready: #8892b0;
+            --status-recording: #ff4d4d;
+            --status-done: #4ade80;
+            
+            --shadow: rgba(0, 0, 0, 0.6);
+            
+            --toggle-btn-bg: #1e293b;
+            --toggle-btn-color: #fbbf24;
+
+            /* متغيرات مخصصة للتايمر عشان يتناسق مع الدارك مود */
+            --timer-card-bg: #1e1e1e;
+            --timer-input-bg: #2a2a2a;
+            --timer-border: #444;
+            --timer-lap-bg: #2a2a2a;
+            --timer-title: #00d2ff;
+        }
+
+        /* ================= متغيرات المود الفاتح (اللايت مود) ================= */
+        body.light-mode {
+            --bg-color: #f4f4f9;
+            --container-bg: #ffffff;
+            --text-color: #333333;
+            --heading-color: #111111;
+            
+            --status-ready: #555555;
+            --status-recording: #dc3545;
+            --status-done: #28a745;
+            
+            --shadow: rgba(0, 0, 0, 0.1);
+            
+            --toggle-btn-bg: #e2e8f0;
+            --toggle-btn-color: #1e293b;
+
+            /* متغيرات مخصصة للتايمر عشان يتناسق مع اللايت مود */
+            --timer-card-bg: #f8f9fa;
+            --timer-input-bg: #ffffff;
+            --timer-border: #cccccc;
+            --timer-lap-bg: #e9ecef;
+            --timer-title: #007bff;
+        }
+
+        /* ================= التنسيقات العامة ================= */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 40px 20px;
+            transition: background-color 0.4s ease, color 0.4s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* زرار تبديل المظهر */
+        .theme-toggle {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            background: var(--toggle-btn-bg);
+            color: var(--toggle-btn-color);
+            border: none;
+            border-radius: 50%;
+            width: 45px;
+            height: 45px;
+            font-size: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 2px 5px var(--shadow);
+            transition: background-color 0.4s, color 0.4s, transform 0.2s;
+            padding: 0;
+            margin: 0;
+            z-index: 1000;
+        }
+        .theme-toggle:hover { transform: scale(1.1); }
+
+        /* الأزرار العامة */
+        button {
+            border: none;
+            cursor: pointer;
+            transition: opacity 0.3s, transform 0.1s;
+        }
+        button:active { transform: scale(0.95); }
+
+        /* ================= تنسيقات مسجل الصوت (العلوي) ================= */
+        .recorder-container {
+            background: var(--container-bg);
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px var(--shadow);
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 40px;
+            transition: background-color 0.4s ease, box-shadow 0.4s ease;
+        }
+        .recorder-container h2 { color: var(--heading-color); margin-bottom: 20px; transition: color 0.4s ease; }
+        .recorder-container button {
+            color: var(--btn-text);
+            padding: 12px 25px;
+            margin: 10px;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .recorder-container button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #startBtn { background-color: var(--btn-start-bg); }
+        #stopBtn { background-color: var(--btn-stop-bg); }
+        #audioPlayback { margin-top: 20px; width: 100%; outline: none; }
+        .status { margin-top: 15px; font-weight: bold; color: var(--status-ready); transition: color 0.4s ease; }
+        #downloadLink { display: none; color: #3b82f6; text-decoration: none; font-weight: bold; margin-top: 15px; transition: color 0.3s; }
+        #downloadLink:hover { text-decoration: underline; }
+
+        /* الخط الفاصل بين التطبيقين */
+        .divider {
+            width: 80%;
+            max-width: 800px;
+            height: 2px;
+            background-color: var(--timer-border);
+            margin-bottom: 40px;
+            transition: background-color 0.4s ease;
+        }
+
+        /* ================= تنسيقات التايمر الاحترافي (السفلي) ================= */
+        .timer-wrapper {
+            width: 100%;
+            max-width: 800px;
+            text-align: center;
+        }
+        .timer-wrapper h1 { 
+            color: var(--timer-title); 
+            transition: color 0.4s ease;
+            margin-bottom: 25px;
+        }
+        .controls-top {
+            background: var(--timer-card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 8px var(--shadow);
+            transition: background-color 0.4s ease, box-shadow 0.4s ease;
+        }
+        input[type="text"] { 
+            padding: 12px; 
+            width: 60%; 
+            border-radius: 5px; 
+            border: 1px solid var(--timer-border); 
+            background: var(--timer-input-bg);
+            color: var(--text-color);
+            font-size: 16px; 
+            margin-left: 10px; 
+            transition: background-color 0.4s ease, color 0.4s ease, border-color 0.4s ease;
+        }
+        input[type="text"]:focus { outline: none; border-color: var(--timer-title); }
+        .controls-top button, .timer-card button { 
+            padding: 10px 15px; 
+            border-radius: 5px; 
+            font-size: 16px; 
+            margin: 5px; 
+            font-weight: bold;
+        }
+        .btn-add { background: #28a745; color: white; }
+        .timer-card { 
+            background: var(--timer-card-bg); 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 4px 8px var(--shadow); 
+            border-right: 5px solid var(--timer-title);
+            transition: background-color 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
+        }
+        .timer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--timer-border);
+            padding-bottom: 10px;
+            flex-wrap: wrap;
+            gap: 10px;
+            transition: border-color 0.4s ease;
+        }
+        .timer-name { font-size: 22px; font-weight: bold; color: var(--text-color); transition: color 0.4s ease;}
+        .timer-actions button { font-size: 14px; padding: 6px 10px; margin: 2px; }
+        .timer-display { 
+            font-size: 50px; 
+            font-family: monospace; 
+            margin: 20px 0; 
+            color: var(--text-color); 
+            letter-spacing: 2px;
+            transition: color 0.4s ease;
+        }
+        .btn-start { background: #007bff; color: white; }
+        .btn-stop { background: #dc3545; color: white; }
+        .btn-lap { background: #ffc107; color: black; }
+        .btn-reset { background: #6c757d; color: white; }
+        .btn-edit { background: #17a2b8; color: white; }
+        .btn-edit-time { background: #8e44ad; color: white; }
+        .btn-delete { background: #ff4d4d; color: white; }
+        .laps-container { 
+            margin-top: 15px; 
+            max-height: 150px; 
+            overflow-y: auto; 
+            background: var(--timer-lap-bg); 
+            border-radius: 5px; 
+            padding: 10px; 
+            text-align: right;
+            transition: background-color 0.4s ease;
+        }
+        .lap-item { 
+            border-bottom: 1px solid var(--timer-border); 
+            padding: 8px 5px; 
+            font-family: monospace; 
+            font-size: 16px;
+            color: var(--text-color);
+            transition: border-color 0.4s ease, color 0.4s ease;
+        }
+        .lap-item:last-child { border-bottom: none; }
+        .lap-number { color: #d97706; font-weight: bold; margin-left: 10px; }
+    </style>
+
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <link rel="manifest" href="./manifest.json?v=v1790165357718">
+    <meta name="theme-color" content="#827db5">
+    <link rel="apple-touch-icon" href="./icon-192.png?v=v1790165357718">
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js?v=v1790165357718')
+            .then(reg => console.log('SW Registered'))
+            .catch(err => console.log('SW Failed', err));
+        });
+      }
+    </script>
+</head>
+<body>
+
+    <!-- زر التبديل بين المودين -->
+    <button class="theme-toggle" id="themeToggle" title="تبديل المظهر">☀️</button>
+
+    <!-- ================= القسم العلوي: مسجل الصوت ================= -->
+    <div class="recorder-container">
+        <h2>🎙️ مسجل الصوت (PWA)</h2>
+        
+        <button id="startBtn">▶️ ابدأ التسجيل</button>
+        <button id="stopBtn" disabled>⏹️ وقف التسجيل</button>
+        
+        <div class="status" id="statusText">جاهز للتسجيل...</div>
+        
+        <audio id="audioPlayback" controls></audio>
+        <br>
+        <a id="downloadLink">⬇️ حمل التسجيل</a>
+    </div>
+
+    <!-- فاصل جمالي بين التطبيقين -->
+    <div class="divider"></div>
+
+    <!-- ================= القسم السفلي: التايمر الاحترافي ================= -->
+    <div class="timer-wrapper">
+        <h1>⏱️ تطبيق التايمر الاحترافي</h1>
+        
+        <div class="controls-top">
+            <input type="text" id="newTimerName" placeholder="اكتب اسم التايمر الجديد هنا (مثال: وقت المذاكرة)...">
+            <button class="btn-add" onclick="createNewTimer()">➕ إضافة تايمر</button>
+        </div>
+
+        <div id="timersList"></div>
+    </div>
+
+    <!-- ================= سكريبت دمج التطبيقين + السيرفر ================= -->
+    <script>
+        /* -----------------------------------------------------------
+           صفر: إعدادات سيرفر فايربيز (Firebase)
+        ----------------------------------------------------------- */
+        const firebaseConfig = {
+            apiKey: "AIzaSyB3o3PJ_l6-lBYReKId2FRxmINjjsV3w1M",
+            authDomain: "backkeenddd.firebaseapp.com",
+            databaseURL: "https://backkeenddd-default-rtdb.firebaseio.com",
+            projectId: "backkeenddd",
+            storageBucket: "backkeenddd.firebasestorage.app",
+            messagingSenderId: "909565299323",
+            appId: "1:909565299323:web:a9ede76e82b00a2039b0de",
+            measurementId: "G-QSXVNCH52R"
+        };
+        
+        // تهيئة فايربيز
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.database();
+
+        /* -----------------------------------------------------------
+           أولاً: كود الدارك/اللايت مود و PWA
+        ----------------------------------------------------------- */
+        const themeToggleBtn = document.getElementById('themeToggle');
+        
+        themeToggleBtn.addEventListener('click', () => {
+            document.body.classList.toggle('light-mode');
+            if (document.body.classList.contains('light-mode')) {
+                themeToggleBtn.innerHTML = '🌙';
+                document.querySelector('meta[name="theme-color"]').setAttribute("content", "#f4f4f9");
+            } else {
+                themeToggleBtn.innerHTML = '☀️';
+                document.querySelector('meta[name="theme-color"]').setAttribute("content", "#0b0f19");
+            }
+        });
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(reg => console.log('Service Worker Registered!'))
+                    .catch(err => console.error('Service Worker Registration Failed!', err));
+            });
+        }
+
+        /* -----------------------------------------------------------
+           ثانياً: كود مسجل الصوت
+        ----------------------------------------------------------- */
+        let mediaRecorder;
+        let audioChunks = [];
+        let fileExtension = '.webm';
+        let isRecording = false; 
+
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const audioPlayback = document.getElementById('audioPlayback');
+        const statusText = document.getElementById('statusText');
+        const downloadLink = document.getElementById('downloadLink');
+
+        window.addEventListener('beforeunload', function (e) {
+            if (isRecording) {
+                e.preventDefault();
+                e.returnValue = 'التسجيل شغال، متأكد إنك عايز تخرج وكل حاجة تضيع؟';
+            }
+        });
+
+        startBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                let options = { audioBitsPerSecond: 32000 };
+                
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    options.mimeType = 'audio/webm;codecs=opus';
+                    fileExtension = '.webm';
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    options.mimeType = 'audio/mp4';
+                    fileExtension = '.mp4';
+                }
+
+                mediaRecorder = new MediaRecorder(stream, options);
+                
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: options.mimeType || 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    audioPlayback.src = audioUrl;
+                    
+                    downloadLink.href = audioUrl;
+                    downloadLink.download = 'Audio_Record' + fileExtension;
+                    downloadLink.style.display = 'inline-block';
+                    
+                    audioChunks = [];
+                    isRecording = false; 
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                isRecording = true; 
+                
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                statusText.innerText = "🔴 جاري التسجيل دلوقتي...";
+                statusText.style.color = "var(--status-recording)";
+                
+            } catch (error) {
+                alert("لازم توافق على الصلاحيات أو تفتح التطبيق عن طريق سيرفر!");
+                console.error(error);
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            if(mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            statusText.innerText = "✅ التسجيل خلص، تقدر تسمعه أو تحمله.";
+            statusText.style.color = "var(--status-done)";
+        });
+
+        /* -----------------------------------------------------------
+           ثالثاً: كود التايمر الاحترافي (مربوط بالسيرفر)
+        ----------------------------------------------------------- */
+        let timers = JSON.parse(localStorage.getItem('offline_timers_data')) || [];
+        let activeIntervals = {};
+
+        // جلب البيانات من السيرفر أول ما الصفحة تفتح
+        db.ref('timers_data').once('value').then(snapshot => {
+            if (snapshot.exists()) {
+                const data = snapshot.val();
+                // معالجة البيانات عشان لو اللفات (laps) فاضية السيرفر بيمسحها
+                timers = data.map(t => {
+                    if (!t.laps) t.laps = [];
+                    return t;
+                });
+                localStorage.setItem('offline_timers_data', JSON.stringify(timers));
+                render();
+            }
+        }).catch(err => console.log("اتصال السيرفر أوفلاين مؤقتاً، شغالين محلي", err));
+
+        function saveTimers() {
+            // الحفظ المحلي
+            localStorage.setItem('offline_timers_data', JSON.stringify(timers));
+            // الحفظ على السيرفر (فايربيز)
+            db.ref('timers_data').set(timers).catch(err => console.error("خطأ في مزامنة السيرفر:", err));
+        }
+
+        function formatTime(ms) {
+            let totalSeconds = Math.floor(ms / 1000);
+            let h = Math.floor(totalSeconds / 3600).toString().padStart(2, '0');
+            let m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+            let s = (totalSeconds % 60).toString().padStart(2, '0');
+            let msFormatted = Math.floor((ms % 1000) / 10).toString().padStart(2, '0');
+            
+            if (h === '00') {
+                return `${m}:${s}.${msFormatted}`;
+            }
+            return `${h}:${m}:${s}.${msFormatted}`;
+        }
+
+        function getEditableTimeFormat(ms) {
+            let totalSeconds = Math.floor(ms / 1000);
+            let h = Math.floor(totalSeconds / 3600);
+            let m = Math.floor((totalSeconds % 3600) / 60);
+            let s = (totalSeconds % 60);
+            
+            if (h > 0) {
+                return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            } else {
+                return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+        }
+
+        function render() {
+            const list = document.getElementById('timersList');
+            list.innerHTML = '';
+            
+            timers.forEach((t, index) => {
+                const card = document.createElement('div');
+                card.className = 'timer-card';
+                
+                let displayTime = t.elapsedTime;
+                if (t.isRunning) {
+                    displayTime += Date.now() - t.lastStartTime;
+                }
+
+                let lapsHtml = [...t.laps].reverse().map((lap, i) => `
+                    <div class="lap-item">
+                        <span class="lap-number">لفة ${t.laps.length - i}:</span> ${formatTime(lap)}
+                    </div>
+                `).join('');
+
+                card.innerHTML = `
+                    <div class="timer-header">
+                        <span class="timer-name">${t.name}</span>
+                        <div class="timer-actions">
+                            <button class="btn-edit" onclick="editName(${index})">✏️ الاسم</button>
+                            <button class="btn-edit-time" onclick="editTime(${index})">⏱️ تعديل الوقت</button>
+                            <button class="btn-delete" onclick="deleteTimer(${index})">❌ حذف</button>
+                        </div>
+                    </div>
+                    <div class="timer-display" id="display-${index}">${formatTime(displayTime)}</div>
+                    <div>
+                        ${t.isRunning
+                            ? `<button class="btn-stop" onclick="stopTimer(${index})">⏸️ وقف</button>`
+                            : `<button class="btn-start" onclick="startTimer(${index})">▶️ ابدأ</button>`
+                        }
+                        <button class="btn-lap" onclick="addLap(${index})">⏱️ لفة (Lap)</button>
+                        <button class="btn-reset" onclick="resetTimer(${index})">🔄 تصفير</button>
+                    </div>
+                    ${t.laps.length > 0 ? `<div class="laps-container">${lapsHtml}</div>` : ''}
+                `;
+                list.appendChild(card);
+
+                if (t.isRunning && !activeIntervals[index]) {
+                    activeIntervals[index] = setInterval(() => updateDisplay(index), 10);
+                }
+            });
+        }
+
+        function updateDisplay(index) {
+            const display = document.getElementById(`display-${index}`);
+            if (display && timers[index]) {
+                let currentElapsed = timers[index].elapsedTime + (Date.now() - timers[index].lastStartTime);
+                display.innerText = formatTime(currentElapsed);
+            }
+        }
+
+        function createNewTimer() {
+            const nameInput = document.getElementById('newTimerName');
+            const name = nameInput.value.trim() || `تايمر ${timers.length + 1}`;
+            timers.push({ name: name, isRunning: false, elapsedTime: 0, lastStartTime: 0, laps: [] });
+            nameInput.value = '';
+            saveTimers();
+            render();
+        }
+
+        function startTimer(index) {
+            if (!timers[index].isRunning) {
+                timers[index].isRunning = true;
+                timers[index].lastStartTime = Date.now();
+                activeIntervals[index] = setInterval(() => updateDisplay(index), 10);
+                saveTimers();
+                render();
+            }
+        }
+
+        function stopTimer(index) {
+            if (timers[index].isRunning) {
+                timers[index].isRunning = false;
+                timers[index].elapsedTime += Date.now() - timers[index].lastStartTime;
+                clearInterval(activeIntervals[index]);
+                delete activeIntervals[index];
+                saveTimers();
+                render();
+            }
+        }
+
+        function resetTimer(index) {
+            timers[index].isRunning = false;
+            timers[index].elapsedTime = 0;
+            timers[index].laps = [];
+            clearInterval(activeIntervals[index]);
+            delete activeIntervals[index];
+            saveTimers();
+            render();
+        }
+
+        function editTime(index) {
+            let wasRunning = timers[index].isRunning;
+            if (wasRunning) {
+                stopTimer(index);
+            }
+
+            let currentVal = getEditableTimeFormat(timers[index].elapsedTime);
+            let newTimeStr = prompt("اكتب الوقت الجديد بالصيغة دي (دقايق:ثواني) أو (ساعات:دقايق:ثواني) أو ثواني بس:\nمثال: 05:30", currentVal);
+
+            if (newTimeStr !== null && newTimeStr.trim() !== "") {
+                let parts = newTimeStr.split(':').map(Number);
+                let newMs = 0;
+                let isValid = true;
+
+                for (let num of parts) {
+                    if (isNaN(num)) {
+                        isValid = false;
+                        break;
+                    }
+                }
+
+                if (isValid) {
+                    if (parts.length === 3) {
+                        newMs = (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
+                    } else if (parts.length === 2) {
+                        newMs = (parts[0] * 60 + parts[1]) * 1000;
+                    } else if (parts.length === 1) {
+                        newMs = parts[0] * 1000;
+                    }
+
+                    timers[index].elapsedTime = newMs;
+                    saveTimers();
+                    render();
+                } else {
+                    alert("الصيغة اللي دخلتها مش مظبوطة، جرب تاني بأرقام واضحة.");
+                }
+            }
+        }
+
+        function addLap(index) {
+            let currentElapsed = timers[index].elapsedTime;
+            if (timers[index].isRunning) {
+                currentElapsed += Date.now() - timers[index].lastStartTime;
+            }
+            timers[index].laps.push(currentElapsed);
+            saveTimers();
+            render();
+        }
+
+        function editName(index) {
+            const newName = prompt("اكتب الاسم الجديد للتايمر ده:", timers[index].name);
+            if (newName !== null && newName.trim() !== "") {
+                timers[index].name = newName.trim();
+                saveTimers();
+                render();
+            }
+        }
+
+        function deleteTimer(index) {
+            if(confirm("متأكد إنك عايز تحذف التايمر ده نهائياً؟")) {
+                if (activeIntervals[index]) {
+                    clearInterval(activeIntervals[index]);
+                }
+                timers.splice(index, 1);
+                for (let key in activeIntervals) {
+                    clearInterval(activeIntervals[key]);
+                }
+                activeIntervals = {};
+                saveTimers();
+                render();
+            }
+        }
+
+        // تشغيل العرض أول ما الصفحة تفتح
+        render();
+    </script>
+</body>
+</html>
